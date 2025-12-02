@@ -142,38 +142,25 @@ public:
     leftLimitHit_ = false;
     rightLimitHit_ = false;
 
-    unsigned long startTime = millis();
-
-    // Step 1: Move left until limit switch
+    // Step 1: Move left until limit switch (NO TIMEOUT - wait indefinitely)
     motor_.setSpeed(-CALIBRATION_SPEED);
-    while (!leftLimitHit_ && (millis() - startTime) < CALIBRATION_TIMEOUT_MS) {
+    while (!leftLimitHit_) {
       delay(10);
     }
     motor_.stop();
-
-    if (!leftLimitHit_) {
-      calibrationState_ = CALIBRATION_ERROR;
-      return false;
-    }
 
     long leftLimitCount = encoderCount_;
     delay(500);
 
-    // Step 2: Move right until limit switch
+    // Step 2: Move right until limit switch (NO TIMEOUT - wait indefinitely)
     leftLimitHit_ = false;
     rightLimitHit_ = false;
-    startTime = millis();
 
     motor_.setSpeed(CALIBRATION_SPEED);
-    while (!rightLimitHit_ && (millis() - startTime) < CALIBRATION_TIMEOUT_MS) {
+    while (!rightLimitHit_) {
       delay(10);
     }
     motor_.stop();
-
-    if (!rightLimitHit_) {
-      calibrationState_ = CALIBRATION_ERROR;
-      return false;
-    }
 
     long rightLimitCount = encoderCount_;
     delay(500);
@@ -213,12 +200,22 @@ public:
   bool isEmergencyStop() const { return emergencyStop_; }
 
   /**
-   * @brief Clear emergency stop
+   * @brief Clear emergency stop (only if no limit switch is physically pressed)
    */
   void clearEmergencyStop() {
     if (!leftLimitHit_ && !rightLimitHit_) {
       emergencyStop_ = false;
     }
+  }
+
+  /**
+   * @brief Force clear emergency stop regardless of limit switch state
+   * Use this after physically moving steering back from limit
+   */
+  void forceResetEmergencyStop() {
+    emergencyStop_ = false;
+    leftLimitHit_ = false;
+    rightLimitHit_ = false;
   }
 
   /**

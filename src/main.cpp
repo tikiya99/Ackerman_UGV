@@ -403,12 +403,49 @@ void updateControllers() {
 /**
  * @brief Check for error states
  */
+/**
+ * @brief Check for error states and handle emergency stop with auto-recovery
+ */
 void checkErrorStates() {
+  // Check if emergency stop is active
   if (steeringController.isEmergencyStop()) {
     if (!emergencyStopActive) {
       emergencyStopActive = true;
       drivingController.stop();
-      Serial.println("EMERGENCY STOP: Limit switch activated!");
+      Serial.println("\n⚠ EMERGENCY STOP: Limit switch activated!");
+      Serial.println("Current steering angle: " + String(steeringController.getCurrentAngle(), 2) + "°");
+      Serial.println("Send 'r' to reset emergency stop after moving steering away from limit.");
+    }
+  } else {
+    // No emergency stop - if was previously active, clear it
+    if (emergencyStopActive) {
+      emergencyStopActive = false;
+      Serial.println("\n✓ Emergency stop cleared. System resumed.");
+    }
+  }
+
+  // Check for reset command from serial (for emergency stop recovery)
+  if (Serial.available() > 0) {
+    char c = Serial.read();
+    if ((c == 'r' || c == 'R') && emergencyStopActive) {
+      // Only allow reset if user sends explicit command
+      Serial.println("\nManually resetting emergency stop...");
+      steeringController.forceResetEmergencyStop();
+      emergencyStopActive = false;
+      Serial.println("✓ Emergency stop reset. System ready.");
+      
+      if (oledFound) {
+        display.clearDisplay();
+        display.setTextSize(2);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 10);
+        display.println(F("RESET OK"));
+        display.setTextSize(1);
+        display.setCursor(0, 35);
+        display.println(F("Ready for commands"));
+        display.display();
+        delay(2000);
+      }
     }
   }
 }
