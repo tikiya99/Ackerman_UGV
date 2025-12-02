@@ -183,16 +183,24 @@ ros2 run ugv_teleop teleop_keyboard
 ## Calibration Process
 
 1. **Power on UGV**
-2. ESP32 checks for saved calibration in memory
-3. If not found:
-   - Moves steering left until limit switch triggers
-   - Records encoder count
-   - Moves right until opposite limit switch triggers
-   - Records encoder count
-   - Calculates center as midpoint
-   - Moves to center and resets encoder to 0
-   - Saves calibration to memory
-4. Future boots load calibration from memory (no movement)
+2. **Automatic limit switch test runs** (tests both switches, ~10 seconds)
+3. ESP32 checks for saved calibration in memory
+4. If not found:
+   - Moves steering **LEFT until limit switch triggers** (NO TIMEOUT - waits indefinitely)
+   - Records encoder count at left position
+   - Moves steering **RIGHT until limit switch triggers** (NO TIMEOUT - waits indefinitely)
+   - Records encoder count at right position
+   - Calculates center position: `center = (left_count + right_count) / 2`
+   - Moves steering to center position based on encoder values
+   - Resets encoder count to 0 at center
+   - Saves calibration to ESP32 memory (Preferences)
+5. Future boots load calibration from memory (no movement needed)
+
+**Important Notes**:
+- ✓ No timeout during calibration - waits for actual limit switch press
+- ✓ If already at a limit (e.g., left limit reached), motor won't move further
+- ✓ Steering centers perfectly based on encoder reading
+- ✓ Calibration is stored and reused on all subsequent boots
 
 ## Testing Process
 
@@ -523,6 +531,60 @@ System ready!
 
 ## Troubleshooting
 
+### Emergency Stop Activated (No Reboot Required!)
+
+**Symptoms**: 
+- OLED shows "EMERGENCY STOP"
+- Serial shows "⚠ EMERGENCY STOP: Limit switch activated!"
+- System accepts commands but doesn't execute them
+
+**Recovery (WITHOUT reboot)**:
+
+1. **Check Physical Position**
+   - Look at steering rack position
+   - Verify it's not actually at a limit switch
+
+2. **Reset via Serial Command**
+   ```bash
+   # Open serial monitor
+   pio device monitor
+   
+   # When you see "Emergency stop" message:
+   # - If steering is NOT at limit: Send 'r' to reset
+   # - If steering IS at limit: Manually move steering away first, then send 'r'
+   ```
+
+3. **What Happens When You Send 'r'**:
+   - Serial shows: "✓ Emergency stop cleared. System resumed."
+   - OLED shows: "RESET OK / Ready for commands"
+   - System resumes normal operation
+   - No reboot needed!
+
+4. **Example Serial Flow**:
+   ```
+   ⚠ EMERGENCY STOP: Limit switch activated!
+   Current steering angle: 9.87°
+   Send 'r' to reset emergency stop after moving steering away from limit.
+   
+   [User manually moves steering back to center]
+   
+   [User sends 'r' via serial monitor]
+   
+   Manually resetting emergency stop...
+   ✓ Emergency stop reset. System ready.
+   ```
+
+**Why This Happens**:
+- Limit switches are safety features
+- They detect when steering reaches maximum rotation (±10°)
+- Sometimes spurious triggers can occur during micro-ROS connection
+- System prevents accidental damage by stopping all motion
+
+**Prevention**:
+- Ensure steering is centered before power-on
+- Check limit switch wiring is secure
+- Use 'r' command quickly to reset and resume operation
+
 ### micro-ROS Agent Connection Failed
 
 **Symptoms**: "Failed to initialize micro-ROS. Retrying..."
@@ -538,17 +600,23 @@ System ready!
 
 **Symptoms**: "EMERGENCY STOP: Limit switch activated!"
 
-**Solutions**:
-1. Power off UGV
-2. Manually center steering
-3. Power on and let recalibrate
-4. Check limit switch wiring if false triggers
+**Quick Recovery Steps**:
+1. Manually move steering away from the limit (toward center)
+2. Open serial monitor (`pio device monitor`)
+3. Send 'r' (just type 'r' and press Enter)
+4. System resets without reboot!
+
+**If Problem Persists**:
+1. Check limit switch wiring
+2. Verify switches are connected to GND (not 5V)
+3. Check for bent or damaged steering rack
+4. Test switches manually in test mode (send 't' at startup)
 
 ### Steering Not Responding
 
 **Possible causes**:
 - Calibration not complete
-- Emergency stop active
+- Emergency stop active (send 'r' to reset)
 - Encoder wiring issue
 - Motor driver connections
 
@@ -560,6 +628,9 @@ ros2 topic echo /ugv/status
 # Look for:
 # - E-Stop: 0 (should be 0)
 # - Angle and Target values changing
+
+# Check serial monitor for detailed info
+pio device monitor
 ```
 
 ## Future Extensions
