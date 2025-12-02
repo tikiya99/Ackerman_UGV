@@ -66,6 +66,9 @@ const unsigned long DISPLAY_PERIOD_MS = 200; // 5Hz display update
 // System state
 bool systemInitialized = false;
 bool emergencyStopActive = false;
+unsigned long systemInitializeTime = 0; // Track when system becomes ready
+volatile bool inStartupGracePeriod = false; // Flag to suppress emergency stop during startup
+const unsigned long STARTUP_GRACE_PERIOD = 2000; // 2 seconds after micro-ROS init
 
 // ========================================
 // Function Declarations
@@ -407,8 +410,15 @@ void updateControllers() {
  * @brief Check for error states and handle emergency stop with auto-recovery
  */
 void checkErrorStates() {
-  // Check if emergency stop is active
-  if (steeringController.isEmergencyStop()) {
+  // Check if grace period has expired
+  if (inStartupGracePeriod && (millis() - systemInitializeTime >= STARTUP_GRACE_PERIOD)) {
+    inStartupGracePeriod = false;
+    steeringController.setStartupGracePeriod(false); // Tell ISRs to start monitoring again
+    Serial.println("⏱ Startup grace period expired. Emergency stop protection active.");
+  }
+  
+  // Check if emergency stop is active (but ignore during grace period)
+  if (steeringController.isEmergencyStop() && !inStartupGracePeriod) {
     if (!emergencyStopActive) {
       emergencyStopActive = true;
       drivingController.stop();
@@ -417,10 +427,15 @@ void checkErrorStates() {
       Serial.println("Send 'r' to reset emergency stop after moving steering away from limit.");
     }
   } else {
-    // No emergency stop - if was previously active, clear it
-    if (emergencyStopActive) {
+    // No emergency stop (or in grace period) - if was previously active, clear it
+    if (emergencyStopActive && !inStartupGracePeriod) {
       emergencyStopActive = false;
       Serial.println("\n✓ Emergency stop cleared. System resumed.");
+    }
+    
+    // During grace period, suppress emergency stop state
+    if (inStartupGracePeriod && emergencyStopActive) {
+      emergencyStopActive = false;
     }
   }
 
@@ -836,6 +851,13 @@ void setup() {
     delay(2000);
   }
 
+  // IMPORTANT: Clear limit switch flags before micro-ROS setup
+  // After calibration, limit switches may have been pressed
+  // This prevents false emergency stop triggers on micro-ROS connection
+  Serial.println("Clearing limit switch flags...");
+  steeringController.clearLimitSwitchFlags();
+  delay(100);
+
   // Setup micro-ROS
   Serial.println("Initializing micro-ROS...");
   while (!setupMicroROS()) {
@@ -843,6 +865,12 @@ void setup() {
     delay(1000);
   }
   Serial.println("micro-ROS initialized successfully!");
+
+  // Record system initialization time and enable grace period
+  systemInitializeTime = millis();
+  inStartupGracePeriod = true;
+  steeringController.setStartupGracePeriod(true); // Tell ISRs to ignore switches
+  Serial.println("⏱ Startup grace period enabled (suppressing spurious emergency stop triggers)");
 
   Serial.println("System ready!");
 }

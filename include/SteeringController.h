@@ -31,6 +31,7 @@ public:
         targetAngle_(0.0), currentAngle_(0.0), pidOutput_(0.0),
         calibrationState_(NOT_CALIBRATED), leftLimitHit_(false),
         rightLimitHit_(false), emergencyStop_(false),
+        startupGracePeriodEnabled_(false),
         lastLeftLimitTime_(0), lastRightLimitTime_(0),
         pid_(&currentAngle_, &pidOutput_, &targetAngle_, 2.0, 0.5, 0.1,
              DIRECT) {
@@ -219,6 +220,24 @@ public:
   }
 
   /**
+   * @brief Clear limit switch flags after calibration complete
+   * Calibration leaves these flags set, but they should be cleared
+   * before normal operation begins
+   */
+  void clearLimitSwitchFlags() {
+    leftLimitHit_ = false;
+    rightLimitHit_ = false;
+  }
+
+  /**
+   * @brief Set startup grace period flag (suppresses emergency stop triggers)
+   * Call this right after micro-ROS initializes
+   */
+  void setStartupGracePeriod(bool enabled) {
+    startupGracePeriodEnabled_ = enabled;
+  }
+
+  /**
    * @brief Get encoder count
    */
   long getEncoderCount() const { return encoderCount_; }
@@ -265,6 +284,7 @@ private:
   volatile bool leftLimitHit_;
   volatile bool rightLimitHit_;
   volatile bool emergencyStop_;
+  volatile bool startupGracePeriodEnabled_;  // Suppress emergency stop during startup
   volatile unsigned long lastLeftLimitTime_;   // Debounce timestamp
   volatile unsigned long lastRightLimitTime_;  // Debounce timestamp
   PID pid_;
@@ -304,6 +324,11 @@ private:
    * @brief Left limit switch interrupt handler with debouncing
    */
   void handleLeftLimitISR() {
+    // Skip if we're in startup grace period (suppresses spurious triggers)
+    if (startupGracePeriodEnabled_) {
+      return;
+    }
+    
     unsigned long currentTime = millis();
     // Only process if debounce time has passed
     if (currentTime - lastLeftLimitTime_ >= LIMIT_DEBOUNCE_MS) {
@@ -321,6 +346,11 @@ private:
    * @brief Right limit switch interrupt handler with debouncing
    */
   void handleRightLimitISR() {
+    // Skip if we're in startup grace period (suppresses spurious triggers)
+    if (startupGracePeriodEnabled_) {
+      return;
+    }
+    
     unsigned long currentTime = millis();
     // Only process if debounce time has passed
     if (currentTime - lastRightLimitTime_ >= LIMIT_DEBOUNCE_MS) {

@@ -118,7 +118,27 @@ private:
     // Simple linear mapping
     // Adjust the scale factor based on your motor/wheel specs
     // For now: 1.0 m/s = 255 PWM
+    
+    // Add a small offset to account for motor deadband
+    // When PWM < MOTOR_DEADBAND, motor stops
+    // So we need to map velocity more aggressively
+    
+    if (abs(velocity) < 0.05) {
+      // For very small velocities, just stop
+      return 0;
+    }
+    
+    // Scale velocity to PWM, accounting for deadband
+    // Map: 0.05 m/s -> MOTOR_DEADBAND PWM, 1.0 m/s -> 255 PWM
     float pwmFloat = (velocity / maxVelocity_) * MAX_PWM_VALUE;
+    
+    // Ensure we meet the deadband requirement
+    if (pwmFloat > 0 && pwmFloat < MOTOR_DEADBAND) {
+      pwmFloat = MOTOR_DEADBAND;
+    } else if (pwmFloat < 0 && pwmFloat > -MOTOR_DEADBAND) {
+      pwmFloat = -MOTOR_DEADBAND;
+    }
+    
     return (int16_t)constrain(pwmFloat, -MAX_PWM_VALUE, MAX_PWM_VALUE);
   }
 };
