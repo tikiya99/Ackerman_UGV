@@ -5,6 +5,7 @@
 #include <rclc/executor.h>
 #include <rclc/rclc.h>
 #include <std_msgs/msg/string.h>
+#include <esp_task_wdt.h>
 
 #include "DrivingController.h"
 #include "MotorDriver.h"
@@ -80,6 +81,7 @@ void performCalibration();
 void updateControllers();
 void checkErrorStates();
 void testLimitSwitches();
+void testSteeringAngle();  // New: Test steering angle control
 
 bool setupMicroROS();
 void updateDisplay();
@@ -148,8 +150,8 @@ void cmdVelCallback(const void *msgin) {
  * @brief Setup micro-ROS
  */
 bool setupMicroROS() {
-  // Setup serial transport
-  Serial.begin(115200);
+  // Serial is already initialized in setup() - don't reinitialize
+  // Serial.begin(115200);  // REMOVED - already done in setup()
   set_microros_serial_transports(Serial);
 
   delay(2000); // Wait for connection
@@ -226,22 +228,29 @@ void autoTestLimitSwitches() {
   // Test left limit switch
   Serial.println("\nTesting LEFT limit switch...");
   Serial.println("Moving steering motor LEFT");
-  
-  steeringController.begin();
-  SteeringController::instance_ = &steeringController;
-  drivingController.begin();
+  Serial.println("Waiting for LEFT limit switch to be pressed...");
 
   // Move steering motor left
-  steeringMotor.setSpeed(-80); // Move left at moderate speed
+  steeringMotor.setSpeed(-150); // Move left at sufficient speed to overcome deadband
   unsigned long testStart = millis();
   bool leftPressed = false;
 
-  while (millis() - testStart < 5000) { // 5 second timeout
-    if (steeringController.getLeftLimitState()) {
+  // Wait indefinitely for actual limit switch press (no timeout)
+  // User must physically press the switch or move it to the limit
+  while (!leftPressed) {
+    // Read limit switch state directly
+    if (digitalRead(LIMIT_SWITCH_LEFT) == LOW) {
       leftPressed = true;
       Serial.println("✓ LEFT limit switch PRESSED!");
       break;
     }
+    
+    // Safety: If motor running for too long (>30 sec), abort
+    if (millis() - testStart > 30000) {
+      Serial.println("✗ LEFT limit switch test timeout (30 seconds)!");
+      break;
+    }
+    
     delay(10);
   }
 
@@ -266,25 +275,34 @@ void autoTestLimitSwitches() {
     display.display();
   }
 
-  // Reset emergency stop for right test
-  steeringController.clearEmergencyStop();
   delay(500);
 
   // Test right limit switch
   Serial.println("\nTesting RIGHT limit switch...");
   Serial.println("Moving steering motor RIGHT");
+  Serial.println("Waiting for RIGHT limit switch to be pressed...");
 
   // Move steering motor right
-  steeringMotor.setSpeed(80); // Move right at moderate speed
+  steeringMotor.setSpeed(150); // Move right at sufficient speed to overcome deadband
   testStart = millis();
   bool rightPressed = false;
 
-  while (millis() - testStart < 5000) { // 5 second timeout
-    if (steeringController.getRightLimitState()) {
+  // Wait indefinitely for actual limit switch press (no timeout)
+  // User must physically press the switch or move it to the limit
+  while (!rightPressed) {
+    // Read limit switch state directly
+    if (digitalRead(LIMIT_SWITCH_RIGHT) == LOW) {
       rightPressed = true;
       Serial.println("✓ RIGHT limit switch PRESSED!");
       break;
     }
+    
+    // Safety: If motor running for too long (>30 sec), abort
+    if (millis() - testStart > 30000) {
+      Serial.println("✗ RIGHT limit switch test timeout (30 seconds)!");
+      break;
+    }
+    
     delay(10);
   }
 
@@ -333,7 +351,7 @@ void autoTestLimitSwitches() {
     Serial.println("Check switch wiring and connections.");
   }
 
-  delay(3000);
+  delay(2000);  // Show result for 2 seconds instead of 3
 }
 
 /**
@@ -417,6 +435,9 @@ void checkErrorStates() {
     Serial.println("⏱ Startup grace period expired. Emergency stop protection active.");
   }
   
+  // Attempt to auto-clear emergency stop if steering is in safe zone
+  steeringController.attemptAutoClearEmergencyStop();
+  
   // Check if emergency stop is active (but ignore during grace period)
   if (steeringController.isEmergencyStop() && !inStartupGracePeriod) {
     if (!emergencyStopActive) {
@@ -424,7 +445,7 @@ void checkErrorStates() {
       drivingController.stop();
       Serial.println("\n⚠ EMERGENCY STOP: Limit switch activated!");
       Serial.println("Current steering angle: " + String(steeringController.getCurrentAngle(), 2) + "°");
-      Serial.println("Send 'r' to reset emergency stop after moving steering away from limit.");
+      Serial.println("Move steering away from limit to auto-recover, or send 'r' to manually reset.");
     }
   } else {
     // No emergency stop (or in grace period) - if was previously active, clear it
@@ -486,6 +507,120 @@ void publishStatus() {
   rcl_ret_t ret = rcl_publish(&status_publisher, &status_msg, NULL);
   if (ret != RCL_RET_OK) {
     // Log error if needed (silent for now to avoid serial spam)
+  }
+}
+
+// ========================================
+// Limit Switch Testing
+// ========================================
+
+/**
+ * @brief Test steering angle control with encoder feedback
+ * Allows manual testing of steering angles and encoder readings
+ */
+void testSteeringAngle() {
+  Serial.println("\n========================================");
+  Serial.println("STEERING ANGLE CONTROL TEST");
+  Serial.println("========================================");
+  Serial.println("Commands:");
+  Serial.println("  a 5   - Move to +5 degrees");
+  Serial.println("  a -5  - Move to -5 degrees");
+  Serial.println("  a 0   - Move to center (0 degrees)");
+  Serial.println("  s     - Show current angle");
+  Serial.println("  q     - Quit test mode\n");
+
+  unsigned long lastDisplayUpdate = 0;
+  float targetAngle = 0.0;
+
+  while (true) {
+    // Read serial commands
+    if (Serial.available() > 0) {
+      char command = Serial.read();
+      
+      if (command == 'q' || command == 'Q') {
+        Serial.println("\nExiting steering test mode...");
+        steeringMotor.stop();
+        break;
+      }
+      else if (command == 'a' || command == 'A') {
+        // Read angle value
+        float angle = Serial.parseFloat();
+        // Consume newline
+        while (Serial.available() && Serial.read() != '\n') {}
+        
+        targetAngle = constrain(angle, MIN_STEERING_ANGLE_DEG, MAX_STEERING_ANGLE_DEG);
+        steeringController.setTargetAngle(targetAngle);
+        
+        Serial.print("Set target angle to: ");
+        Serial.println(targetAngle, 1);
+      }
+      else if (command == 's' || command == 'S') {
+        // Consume any remaining characters on this line
+        while (Serial.available() && Serial.read() != '\n') {}
+      }
+    }
+
+    // Update steering controller
+    steeringController.update();
+
+    // Display update every 200ms
+    if (millis() - lastDisplayUpdate >= 200) {
+      lastDisplayUpdate = millis();
+
+      // Serial output
+      Serial.print("Target: ");
+      Serial.print(targetAngle, 1);
+      Serial.print(" deg | Current: ");
+      Serial.print(steeringController.getCurrentAngle(), 1);
+      Serial.print(" deg | Encoder: ");
+      Serial.println(steeringController.getEncoderCount());
+
+      // OLED display
+      if (oledFound) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+
+        display.println(F("STEERING TEST"));
+        display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+
+        display.setCursor(0, 15);
+        display.setTextSize(2);
+
+        // Target angle
+        display.print(F("Target: "));
+        display.println(targetAngle, 1);
+
+        // Current angle
+        display.setTextSize(1);
+        display.print(F("Curr: "));
+        display.println(steeringController.getCurrentAngle(), 1);
+
+        // Encoder count
+        display.print(F("Enc: "));
+        display.println(steeringController.getEncoderCount());
+
+        // Error
+        float error = targetAngle - steeringController.getCurrentAngle();
+        display.print(F("Error: "));
+        display.println(error, 1);
+
+        display.display();
+      }
+    }
+
+    delay(10);
+  }
+
+  if (oledFound) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("Test Complete"));
+    display.display();
+    delay(1000);
   }
 }
 
@@ -672,9 +807,13 @@ void displayCommandReceived() {
   display.print(timeSince);
   display.println(F("ms"));
 
-  // Show steering angle being commanded
-  display.print(F("Target Angle: "));
+  // Show steering angle with encoder feedback
+  display.print(F("Target: "));
   display.print(steeringController.getTargetAngle(), 1);
+  display.println(F(" deg"));
+
+  display.print(F("Current: "));
+  display.print(steeringController.getCurrentAngle(), 1);
   display.println(F(" deg"));
 
   display.display();
@@ -733,11 +872,15 @@ void updateDisplay() {
   display.print(F("Cal: "));
   display.println(steeringController.getCalibrationStateString());
 
-  // Steering info
+  // Steering info with encoder feedback
   display.print(F("Ang: "));
   display.print(steeringController.getCurrentAngle(), 1);
-  display.print(F(" / "));
+  display.print(F("/"));
   display.println(steeringController.getTargetAngle(), 1);
+
+  // Encoder count
+  display.print(F("Enc: "));
+  display.println(steeringController.getEncoderCount());
 
   // Velocity
   display.print(F("Vel: "));
@@ -802,28 +945,50 @@ void setup() {
   }
   Serial.println("========================================\n");
 
-  // Option to enter test mode
+  // Option to enter test mode - MUST complete within 3 seconds
   Serial.println(
       "Send 't' within 3 seconds to enter limit switch test mode...");
+  Serial.println(
+      "Send 's' within 3 seconds to enter steering angle test mode...");
   unsigned long startWait = millis();
+  bool testModeRequested = false;
   while (millis() - startWait < 3000) {
     if (Serial.available() > 0) {
       char c = Serial.read();
       if (c == 't' || c == 'T') {
-        testLimitSwitches();
+        testModeRequested = true;
+        break;
+      }
+      if (c == 's' || c == 'S') {
+        testModeRequested = true;
         break;
       }
     }
     delay(10);
   }
 
-  // Auto-test limit switches at startup
-  Serial.println("Performing automatic limit switch test...");
-  autoTestLimitSwitches();
+  // Clear any remaining serial data
+  while (Serial.available() > 0) {
+    Serial.read();
+  }
 
-  // Initialize controllers (after limit switch test)
+  // Skip automatic limit test if user requested manual test mode
+  if (!testModeRequested) {
+    Serial.println("Performing automatic limit switch test...");
+    autoTestLimitSwitches();
+  }
+
+  // Initialize controllers (AFTER any test mode, BEFORE calibration)
+  Serial.println("Initializing controllers...");
   steeringController.begin();
   drivingController.begin();
+  SteeringController::instance_ = &steeringController;
+
+  // Set startup grace period flag (must be set before calibration)
+  systemInitializeTime = millis();
+  inStartupGracePeriod = true;
+  steeringController.setStartupGracePeriod(true);
+  Serial.println("⏱ Startup grace period enabled");
 
   // Check if already calibrated
   if (steeringController.getCalibrationState() !=
@@ -832,26 +997,23 @@ void setup() {
     performCalibration();
   } else {
     Serial.println("Calibration loaded from memory.");
-    SteeringController::instance_ = &steeringController;
     systemInitialized = true;
   }
 
   // Clear OLED boot message and display ready state
   if (oledFound) {
     display.clearDisplay();
-    display.setTextSize(2);
+    display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(0, 0);
-    display.println(F("System Ready!"));
-    display.setTextSize(1);
-    display.setCursor(0, 25);
-    display.println(F("Waiting for"));
-    display.println(F("ROS2 commands..."));
+    display.println(F("Initializing"));
+    display.println(F("micro-ROS..."));
+    display.setCursor(0, 30);
+    display.println(F("Please wait..."));
     display.display();
-    delay(2000);
   }
 
-  // IMPORTANT: Clear limit switch flags before micro-ROS setup
+  // Clear limit switch flags before micro-ROS setup
   // After calibration, limit switches may have been pressed
   // This prevents false emergency stop triggers on micro-ROS connection
   Serial.println("Clearing limit switch flags...");
@@ -860,24 +1022,61 @@ void setup() {
 
   // Setup micro-ROS
   Serial.println("Initializing micro-ROS...");
-  while (!setupMicroROS()) {
+  int microRosRetries = 0;
+  bool rosInitSuccess = setupMicroROS();
+  while (!rosInitSuccess && microRosRetries < 5) {
     Serial.println("Failed to initialize micro-ROS. Retrying...");
+    microRosRetries++;
     delay(1000);
+    rosInitSuccess = setupMicroROS();
   }
-  Serial.println("micro-ROS initialized successfully!");
 
-  // Record system initialization time and enable grace period
-  systemInitializeTime = millis();
-  inStartupGracePeriod = true;
-  steeringController.setStartupGracePeriod(true); // Tell ISRs to ignore switches
-  Serial.println("⏱ Startup grace period enabled (suppressing spurious emergency stop triggers)");
+  if (!rosInitSuccess) {
+    Serial.println("⚠ Failed to initialize micro-ROS after 5 attempts!");
+    if (oledFound) {
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(SSD1306_WHITE);
+      display.setCursor(0, 0);
+      display.println(F("micro-ROS FAILED"));
+      display.setCursor(0, 20);
+      display.println(F("Check connection"));
+      display.display();
+    }
+    // Continue anyway - system can work without ROS2
+    systemInitialized = true;
+  } else {
+    Serial.println("✓ micro-ROS initialized successfully!");
+    systemInitialized = true;
+  }
 
-  Serial.println("System ready!");
+  // Update display after micro-ROS connection
+  if (oledFound) {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("READY!"));
+    display.setTextSize(1);
+    display.setCursor(0, 25);
+    display.println(F("Waiting for"));
+    display.println(F("ROS2 commands..."));
+    display.display();
+    delay(2000);
+  }
+
+  Serial.println("✓ System initialization complete!");
+  Serial.println("Ready to accept ROS2 commands.\n");
 }
 
 void loop() {
-  // Spin executor to handle callbacks
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
+  // Feed the watchdog timer - prevents ESP32 reset
+  esp_task_wdt_reset();
+  
+  // Spin executor to handle callbacks (with timeout to prevent hang)
+  if (systemInitialized) {
+    rclc_executor_spin_some(&executor, RCL_MS_TO_NS(1));
+  }
 
   // Control loop
   unsigned long currentTime = millis();

@@ -43,8 +43,9 @@
 #define MOTOR_DEADBAND 20 // PWM deadband to prevent motor hum
 
 // Encoder Configuration
-#define ENCODER_PPR 600      // Pulses per revolution
-#define PULSES_PER_DEGREE 50 // Pulses per degree of rotation
+#define ENCODER_PPR 600                    // Pulses per revolution
+#define PULSES_PER_10_DEGREES 500          // 10 degrees = 500 pulses (as per requirement)
+#define PULSES_PER_DEGREE (PULSES_PER_10_DEGREES / 10.0) // 50 pulses per degree
 
 // Steering Safety Limits
 #define MAX_STEERING_ANGLE_DEG 10.0  // Maximum steering angle (degrees)

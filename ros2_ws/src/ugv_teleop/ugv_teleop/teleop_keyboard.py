@@ -39,6 +39,11 @@ k : stop
 m/. : backward left/right
 , : backward
 
+Direct Steering Control (Angle-based):
+a/d : decrease/increase steering angle
+s : center steering (0 degrees)
+h/y : rotate full left/right
+
 space : emergency stop (zero all velocities)
 q/z : increase/decrease max speeds by 10%
 w/x : increase/decrease only linear speed by 10%
@@ -59,6 +64,15 @@ moveBindings = {
     ',': (-1, 0),  # Backward
     '.': (-1, -1), # Backward right
     'm': (-1, 1),  # Backward left
+}
+
+# Steering angle control keys (direct angle commands)
+steeringBindings = {
+    'a': -2,      # Decrease steering angle by 2 degrees
+    'd': 2,       # Increase steering angle by 2 degrees
+    's': 0,       # Center steering (0 degrees)
+    'h': -10,     # Full left
+    'y': 10,      # Full right
 }
 
 # Speed adjustment keys
@@ -103,11 +117,18 @@ class TeleopKeyboard(Node):
         self.x = 0.0
         self.th = 0.0
         
+        # Steering angle control (in degrees)
+        # -10 to +10 degrees based on UGV steering range
+        self.steering_angle = 0.0
+        self.max_steering_angle = 10.0
+        self.min_steering_angle = -10.0
+        
         # Control state
         self.status = 0
         
         self.get_logger().info('UGV Teleop Keyboard Node Started')
         self.get_logger().info(vels(self.speed, self.turn))
+        self.get_logger().info(f'Steering angle: {self.steering_angle:.1f}°')
 
     def publish_twist(self, x, th):
         """Publish Twist message"""
@@ -120,6 +141,19 @@ class TeleopKeyboard(Node):
         twist.angular.z = th * self.turn
         self.pub.publish(twist)
 
+    def update_steering_angle(self, delta):
+        """Update steering angle by delta degrees"""
+        self.steering_angle += delta
+        self.steering_angle = max(self.min_steering_angle, 
+                                  min(self.max_steering_angle, self.steering_angle))
+        # Convert steering angle to angular velocity
+        # Simplified mapping: steering angle / max_steering_angle = normalized turn rate
+        if self.steering_angle != 0:
+            self.th = (self.steering_angle / self.max_steering_angle)
+        else:
+            self.th = 0.0
+        return self.steering_angle
+
     def run(self):
         """Main loop for keyboard input"""
         settings = termios.tcgetattr(sys.stdin)
@@ -127,6 +161,7 @@ class TeleopKeyboard(Node):
         try:
             print(MSG)
             print(vels(self.speed, self.turn))
+            print(f"Steering: {self.steering_angle:.1f}°\n")
             
             while True:
                 key = getKey(settings)
@@ -135,6 +170,21 @@ class TeleopKeyboard(Node):
                     self.x = moveBindings[key][0]
                     self.th = moveBindings[key][1]
                     self.status += 1
+                    
+                elif key in steeringBindings.keys():
+                    # Direct steering angle control
+                    angle_delta = steeringBindings[key]
+                    if angle_delta == 0:
+                        # Center steering
+                        self.steering_angle = 0.0
+                        self.th = 0.0
+                    else:
+                        # Increment/decrement steering angle
+                        self.steering_angle = self.update_steering_angle(angle_delta)
+                    
+                    self.x = 0.0
+                    self.status += 1
+                    print(f"Steering: {self.steering_angle:.1f}° | Turn rate: {self.th:.2f}")
                     
                 elif key in speedBindings.keys():
                     self.speed *= speedBindings[key][0]
@@ -154,7 +204,8 @@ class TeleopKeyboard(Node):
                     self.x = 0.0
                     self.th = 0.0
                     if key == ' ':
-                        print("EMERGENCY STOP")
+                        print("EMERGENCY STOP - All velocities zeroed")
+                        print(f"Steering: {self.steering_angle:.1f}°")
                         
                 elif key == '\x03':  # Ctrl-C
                     break

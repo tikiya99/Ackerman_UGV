@@ -100,6 +100,13 @@ public:
     targetAngle_ =
         constrain(targetAngle_, MIN_STEERING_ANGLE_DEG, MAX_STEERING_ANGLE_DEG);
 
+    // Additional safety: If at limit and trying to go further, zero target to stop
+    if ((currentAngle_ >= MAX_STEERING_ANGLE_DEG - 0.5 && targetAngle_ > currentAngle_) ||
+        (currentAngle_ <= MIN_STEERING_ANGLE_DEG + 0.5 && targetAngle_ < currentAngle_)) {
+      // At limit and trying to go past it - clamp target to current
+      targetAngle_ = currentAngle_;
+    }
+
     // Compute PID
     pid_.Compute();
 
@@ -243,6 +250,21 @@ public:
   long getEncoderCount() const { return encoderCount_; }
 
   /**
+   * @brief Get steering angle based on encoder position
+   * This is the actual angle calculated from encoder pulses
+   *
+   * @return float Steering angle in degrees
+   */
+  float getSteeringAngleFromEncoder() const {
+    return (float)encoderCount_ / PULSES_PER_DEGREE;
+  }
+
+  /**
+   * @brief Get target steering angle to reach
+   */
+  float getTargetSteeringAngle() const { return targetAngle_; }
+
+  /**
    * @brief Get left limit switch state
    */
   bool getLeftLimitState() const { return leftLimitHit_; }
@@ -267,6 +289,32 @@ public:
       return "ERROR";
     default:
       return "UNKNOWN";
+    }
+  }
+
+  /**
+   * @brief Check if steering is back in safe zone (away from limit switches)
+   * Used to auto-clear emergency stop after user moves steering back
+   * Safe zone is considered center ±8 degrees (400 pulses)
+   */
+  bool isInSafeZone() const {
+    // Safe zone: -400 to +400 pulses from center
+    return (encoderCount_ >= -400 && encoderCount_ <= 400);
+  }
+
+  /**
+   * @brief Auto-clear emergency stop if steering is in safe zone
+   * Call this regularly from main loop to allow recovery
+   */
+  void attemptAutoClearEmergencyStop() {
+    if (emergencyStop_ && !startupGracePeriodEnabled_) {
+      // Only auto-clear if steering is well away from limits
+      if (isInSafeZone()) {
+        leftLimitHit_ = false;
+        rightLimitHit_ = false;
+        emergencyStop_ = false;
+        Serial.println("✓ Emergency stop auto-cleared (steering in safe zone)");
+      }
     }
   }
 
@@ -300,6 +348,8 @@ private:
 
   /**
    * @brief Encoder interrupt handler
+   * IMPORTANT: Keep ISR as lightweight as possible!
+   * Do NOT call heavy functions like updateCurrentAngle() or millis()
    */
   void handleEncoderISR() {
     bool aState = digitalRead(ENCODER_A_PIN);
@@ -312,10 +362,10 @@ private:
       encoderCount_--;
     }
 
-    // Check if limits exceeded
-    updateCurrentAngle();
-    if (currentAngle_ < MIN_STEERING_ANGLE_DEG - 1.0 ||
-        currentAngle_ > MAX_STEERING_ANGLE_DEG + 1.0) {
+    // Check soft limits using encoder count directly (no floating point math)
+    // PULSES_PER_DEGREE = 50, so ±10 degrees = ±500 pulses
+    // Add 20% margin = ±600 pulses
+    if (encoderCount_ < -600 || encoderCount_ > 600) {
       emergencyStop_ = true;
     }
   }
