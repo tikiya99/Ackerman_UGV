@@ -31,6 +31,7 @@ public:
         targetAngle_(0.0), currentAngle_(0.0), pidOutput_(0.0),
         calibrationState_(NOT_CALIBRATED), leftLimitHit_(false),
         rightLimitHit_(false), emergencyStop_(false),
+        lastLeftLimitTime_(0), lastRightLimitTime_(0),
         pid_(&currentAngle_, &pidOutput_, &targetAngle_, 2.0, 0.5, 0.1,
              DIRECT) {
 
@@ -57,11 +58,15 @@ public:
         digitalPinToInterrupt(ENCODER_A_PIN),
         []() { instance_->handleEncoderISR(); }, CHANGE);
 
-    // Setup limit switch pins with pull-up (active LOW)
+    // Setup limit switch pins - connected to GND (active LOW)
+    // Note: Switches are connected to GND, not 5V
+    // When pressed, they pull the pin to GND (LOW)
+    // Use INPUT_PULLUP to keep pin HIGH when switch is open
+    // When switch closes, it pulls pin to GND, triggering FALLING edge
     pinMode(LIMIT_SWITCH_LEFT, INPUT_PULLUP);
     pinMode(LIMIT_SWITCH_RIGHT, INPUT_PULLUP);
 
-    // Attach limit switch interrupts
+    // Attach limit switch interrupts on FALLING edge (when switch is pressed)
     attachInterrupt(
         digitalPinToInterrupt(LIMIT_SWITCH_LEFT),
         []() { instance_->handleLeftLimitISR(); }, FALLING);
@@ -221,6 +226,34 @@ public:
    */
   long getEncoderCount() const { return encoderCount_; }
 
+  /**
+   * @brief Get left limit switch state
+   */
+  bool getLeftLimitState() const { return leftLimitHit_; }
+
+  /**
+   * @brief Get right limit switch state
+   */
+  bool getRightLimitState() const { return rightLimitHit_; }
+
+  /**
+   * @brief Get calibration state as string
+   */
+  const char *getCalibrationStateString() const {
+    switch (calibrationState_) {
+    case NOT_CALIBRATED:
+      return "NOT_CALIBRATED";
+    case CALIBRATING:
+      return "CALIBRATING";
+    case CALIBRATED:
+      return "CALIBRATED";
+    case CALIBRATION_ERROR:
+      return "ERROR";
+    default:
+      return "UNKNOWN";
+    }
+  }
+
   // Static instance pointer for ISR access
   static SteeringController *instance_;
 
@@ -235,8 +268,11 @@ private:
   volatile bool leftLimitHit_;
   volatile bool rightLimitHit_;
   volatile bool emergencyStop_;
+  volatile unsigned long lastLeftLimitTime_;   // Debounce timestamp
+  volatile unsigned long lastRightLimitTime_;  // Debounce timestamp
   PID pid_;
   Preferences preferences_;
+  static const unsigned long LIMIT_DEBOUNCE_MS = 50; // 50ms debounce
 
   /**
    * @brief Update current angle from encoder count
@@ -268,21 +304,37 @@ private:
   }
 
   /**
-   * @brief Left limit switch interrupt handler
+   * @brief Left limit switch interrupt handler with debouncing
    */
   void handleLeftLimitISR() {
-    leftLimitHit_ = true;
-    emergencyStop_ = true;
-    motor_.stop();
+    unsigned long currentTime = millis();
+    // Only process if debounce time has passed
+    if (currentTime - lastLeftLimitTime_ >= LIMIT_DEBOUNCE_MS) {
+      // Verify pin is actually LOW (switch pressed)
+      if (digitalRead(LIMIT_SWITCH_LEFT) == LOW) {
+        leftLimitHit_ = true;
+        emergencyStop_ = true;
+        motor_.stop();
+      }
+      lastLeftLimitTime_ = currentTime;
+    }
   }
 
   /**
-   * @brief Right limit switch interrupt handler
+   * @brief Right limit switch interrupt handler with debouncing
    */
   void handleRightLimitISR() {
-    rightLimitHit_ = true;
-    emergencyStop_ = true;
-    motor_.stop();
+    unsigned long currentTime = millis();
+    // Only process if debounce time has passed
+    if (currentTime - lastRightLimitTime_ >= LIMIT_DEBOUNCE_MS) {
+      // Verify pin is actually LOW (switch pressed)
+      if (digitalRead(LIMIT_SWITCH_RIGHT) == LOW) {
+        rightLimitHit_ = true;
+        emergencyStop_ = true;
+        motor_.stop();
+      }
+      lastRightLimitTime_ = currentTime;
+    }
   }
 
   /**

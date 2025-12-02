@@ -48,13 +48,20 @@ char status_buffer[256];
 // OLED Display
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET_PIN);
 bool oledFound = false;
-bool gy87Found = false;
+
+// Last received command tracking
+float lastLinearVel = 0.0;
+float lastAngularVel = 0.0;
+unsigned long lastCmdVelTime = 0;
+bool cmdVelReceived = false;
 
 // Timing
 unsigned long lastControlUpdate = 0;
 unsigned long lastStatusPublish = 0;
-const unsigned long CONTROL_PERIOD_MS = 10; // 100Hz control loop
-const unsigned long STATUS_PERIOD_MS = 100; // 10Hz status publishing
+unsigned long lastDisplayUpdate = 0;
+const unsigned long CONTROL_PERIOD_MS = 10;  // 100Hz control loop
+const unsigned long STATUS_PERIOD_MS = 100;  // 10Hz status publishing
+const unsigned long DISPLAY_PERIOD_MS = 200; // 5Hz display update
 
 // System state
 bool systemInitialized = false;
@@ -69,10 +76,15 @@ void publishStatus();
 void performCalibration();
 void updateControllers();
 void checkErrorStates();
+void testLimitSwitches();
 
 bool setupMicroROS();
 void updateDisplay();
 void displayError(const char *error);
+void displayCalibrationStatus(const char *message);
+void displayCommandReceived();
+void displayLimitSwitchStatus();
+void displayConnectivityStatus();
 
 // ========================================
 // micro-ROS Callback
@@ -85,6 +97,12 @@ void displayError(const char *error);
 void cmdVelCallback(const void *msgin) {
   const geometry_msgs__msg__Twist *msg =
       (const geometry_msgs__msg__Twist *)msgin;
+
+  // Track command reception
+  lastLinearVel = msg->linear.x;
+  lastAngularVel = msg->angular.z;
+  lastCmdVelTime = millis();
+  cmdVelReceived = true;
 
   if (emergencyStopActive) {
     return; // Ignore commands during emergency stop
@@ -183,19 +201,189 @@ bool setupMicroROS() {
 }
 
 /**
- * @brief Perform steering calibration
+ * @brief Perform automatic limit switch testing at startup
+ */
+void autoTestLimitSwitches() {
+  Serial.println("\n========================================");
+  Serial.println("AUTOMATIC LIMIT SWITCH TEST");
+  Serial.println("========================================");
+
+  if (oledFound) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("LIMIT SWITCH TEST"));
+    display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+    display.setCursor(0, 15);
+    display.println(F("Testing Left..."));
+    display.display();
+  }
+
+  // Test left limit switch
+  Serial.println("\nTesting LEFT limit switch...");
+  Serial.println("Moving steering motor LEFT");
+  
+  steeringController.begin();
+  SteeringController::instance_ = &steeringController;
+  drivingController.begin();
+
+  // Move steering motor left
+  steeringMotor.setSpeed(-80); // Move left at moderate speed
+  unsigned long testStart = millis();
+  bool leftPressed = false;
+
+  while (millis() - testStart < 5000) { // 5 second timeout
+    if (steeringController.getLeftLimitState()) {
+      leftPressed = true;
+      Serial.println("✓ LEFT limit switch PRESSED!");
+      break;
+    }
+    delay(10);
+  }
+
+  steeringMotor.stop();
+  delay(500);
+
+  if (!leftPressed) {
+    Serial.println("✗ LEFT limit switch NOT triggered!");
+  }
+
+  if (oledFound) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("LIMIT SWITCH TEST"));
+    display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+    display.setCursor(0, 15);
+    display.print(F("L: "));
+    display.println(leftPressed ? F("PASS") : F("FAIL"));
+    display.println(F("Testing Right..."));
+    display.display();
+  }
+
+  // Reset emergency stop for right test
+  steeringController.clearEmergencyStop();
+  delay(500);
+
+  // Test right limit switch
+  Serial.println("\nTesting RIGHT limit switch...");
+  Serial.println("Moving steering motor RIGHT");
+
+  // Move steering motor right
+  steeringMotor.setSpeed(80); // Move right at moderate speed
+  testStart = millis();
+  bool rightPressed = false;
+
+  while (millis() - testStart < 5000) { // 5 second timeout
+    if (steeringController.getRightLimitState()) {
+      rightPressed = true;
+      Serial.println("✓ RIGHT limit switch PRESSED!");
+      break;
+    }
+    delay(10);
+  }
+
+  steeringMotor.stop();
+  delay(500);
+
+  if (!rightPressed) {
+    Serial.println("✗ RIGHT limit switch NOT triggered!");
+  }
+
+  // Display final test results
+  if (oledFound) {
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("LIMIT SWITCH TEST"));
+    display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+    display.setCursor(0, 15);
+    display.print(F("L: "));
+    display.println(leftPressed ? F("PASS") : F("FAIL"));
+    display.print(F("R: "));
+    display.println(rightPressed ? F("PASS") : F("FAIL"));
+    display.setCursor(0, 40);
+    if (leftPressed && rightPressed) {
+      display.println(F("✓ Both OK!"));
+    } else {
+      display.println(F("✗ Check wiring"));
+    }
+    display.display();
+  }
+
+  // Test summary
+  Serial.println("\n========================================");
+  Serial.println("TEST SUMMARY:");
+  Serial.print("Left switch: ");
+  Serial.println(leftPressed ? "PASS" : "FAIL");
+  Serial.print("Right switch: ");
+  Serial.println(rightPressed ? "PASS" : "FAIL");
+  Serial.println("========================================\n");
+
+  if (leftPressed && rightPressed) {
+    Serial.println("✓ Both switches working correctly!");
+  } else {
+    Serial.println("⚠ Warning: Not all switches working properly.");
+    Serial.println("Check switch wiring and connections.");
+  }
+
+  delay(3000);
+}
+
+/**
+ * @brief Perform steering calibration with detailed feedback
  */
 void performCalibration() {
-  Serial.println("Starting steering calibration...");
+  Serial.println("\n========================================");
+  Serial.println("STARTING STEERING CALIBRATION");
+  Serial.println("========================================");
+  displayCalibrationStatus("Starting...");
 
   // Set instance pointer for ISR
   SteeringController::instance_ = &steeringController;
 
   if (steeringController.calibrate()) {
-    Serial.println("Calibration successful!");
+    Serial.println("\n✓ Calibration successful!");
+    Serial.println("Steering motor centered and ready.");
+    
+    if (oledFound) {
+      display.clearDisplay();
+      display.setTextSize(2);
+      display.setTextColor(SSD1306_WHITE);
+      display.setCursor(0, 0);
+      display.println(F("CALIBRATION"));
+      display.setCursor(0, 20);
+      display.println(F("SUCCESS!"));
+      display.setTextSize(1);
+      display.setCursor(0, 45);
+      display.println(F("Ready for ROS2"));
+      display.display();
+    }
+    
+    delay(2000);
     systemInitialized = true;
   } else {
-    Serial.println("Calibration failed!");
+    Serial.println("\n✗ Calibration failed!");
+    Serial.println("Check limit switches and encoder.");
+    
+    if (oledFound) {
+      display.clearDisplay();
+      display.setTextSize(2);
+      display.setTextColor(SSD1306_WHITE);
+      display.setCursor(0, 0);
+      display.println(F("CALIBRATION"));
+      display.setCursor(0, 20);
+      display.println(F("FAILED!"));
+      display.setTextSize(1);
+      display.setCursor(0, 45);
+      display.println(F("Check switches"));
+      display.display();
+    }
+    
+    delay(3000);
     systemInitialized = false;
   }
 }
@@ -250,6 +438,115 @@ void publishStatus() {
 }
 
 // ========================================
+// Limit Switch Testing
+// ========================================
+
+/**
+ * @brief Test limit switches and display their states
+ */
+void testLimitSwitches() {
+  Serial.println("\n========================================");
+  Serial.println("LIMIT SWITCH TEST MODE");
+  Serial.println("========================================");
+  Serial.println("Press each limit switch to test.");
+  Serial.println("Both switches should read HIGH when not pressed.");
+  Serial.println("Press 'q' in Serial Monitor to exit test mode.\n");
+
+  unsigned long lastDisplayUpdate = 0;
+  bool leftState, rightState;
+  bool leftPressed = false, rightPressed = false;
+
+  while (true) {
+    // Check for exit command
+    if (Serial.available() > 0) {
+      char c = Serial.read();
+      if (c == 'q' || c == 'Q') {
+        Serial.println("\nExiting test mode...");
+        break;
+      }
+    }
+
+    // Read current states (HIGH = not pressed, LOW = pressed)
+    leftState = digitalRead(LIMIT_SWITCH_LEFT);
+    rightState = digitalRead(LIMIT_SWITCH_RIGHT);
+
+    // Track if switches have been pressed
+    if (!leftState)
+      leftPressed = true;
+    if (!rightState)
+      rightPressed = true;
+
+    // Update display every 100ms
+    if (millis() - lastDisplayUpdate >= 100) {
+      lastDisplayUpdate = millis();
+
+      // Serial output
+      Serial.print("Left: ");
+      Serial.print(leftState ? "HIGH (OK)     " : "LOW (PRESSED)");
+      Serial.print("  |  Right: ");
+      Serial.println(rightState ? "HIGH (OK)     " : "LOW (PRESSED)");
+
+      // OLED display
+      if (oledFound) {
+        display.clearDisplay();
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(0, 0);
+
+        display.println(F("LIMIT SWITCH TEST"));
+        display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+
+        display.setCursor(0, 15);
+        display.setTextSize(2);
+
+        // Left switch
+        display.print(F("L: "));
+        if (leftState) {
+          display.println(F("OK"));
+        } else {
+          display.println(F("PRESS"));
+        }
+
+        // Right switch
+        display.print(F("R: "));
+        if (rightState) {
+          display.println(F("OK"));
+        } else {
+          display.println(F("PRESS"));
+        }
+
+        // Status
+        display.setTextSize(1);
+        display.setCursor(0, 50);
+        display.print(F("Tested: L:"));
+        display.print(leftPressed ? "Y" : "N");
+        display.print(F(" R:"));
+        display.println(rightPressed ? "Y" : "N");
+
+        display.display();
+      }
+    }
+
+    delay(10);
+  }
+
+  // Summary
+  Serial.println("\n========================================");
+  Serial.println("TEST SUMMARY:");
+  Serial.print("Left switch tested: ");
+  Serial.println(leftPressed ? "YES" : "NO");
+  Serial.print("Right switch tested: ");
+  Serial.println(rightPressed ? "YES" : "NO");
+
+  if (leftPressed && rightPressed) {
+    Serial.println("\n✓ Both switches working correctly!");
+  } else {
+    Serial.println("\n⚠ Warning: Not all switches were tested.");
+  }
+  Serial.println("========================================\n");
+}
+
+// ========================================
 // Display Functions
 // ========================================
 
@@ -267,6 +564,99 @@ void displayError(const char *error) {
   display.display();
 }
 
+void displayCalibrationStatus(const char *message) {
+  if (!oledFound)
+    return;
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  display.println(F("CALIBRATION"));
+  display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+
+  display.setCursor(0, 15);
+  display.setTextSize(2);
+  display.println(message);
+
+  display.setTextSize(1);
+  display.setCursor(0, 35);
+  display.print(F("L-Limit: "));
+  display.println(steeringController.getLeftLimitState() ? "PRESS" : "OK");
+
+  display.print(F("R-Limit: "));
+  display.println(steeringController.getRightLimitState() ? "PRESS" : "OK");
+
+  display.print(F("Encoder: "));
+  display.println(steeringController.getEncoderCount());
+
+  display.display();
+}
+
+void displayCommandReceived() {
+  if (!oledFound)
+    return;
+
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  display.println(F("CMD RECEIVED!"));
+  display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
+
+  display.setCursor(0, 15);
+  display.print(F("Linear:  "));
+  display.print(lastLinearVel, 2);
+  display.println(F(" m/s"));
+
+  display.print(F("Angular: "));
+  display.print(lastAngularVel, 2);
+  display.println(F(" rad/s"));
+
+  unsigned long timeSince = millis() - lastCmdVelTime;
+  display.print(F("Age: "));
+  display.print(timeSince);
+  display.println(F("ms"));
+
+  // Show steering angle being commanded
+  display.print(F("Target Angle: "));
+  display.print(steeringController.getTargetAngle(), 1);
+  display.println(F(" deg"));
+
+  display.display();
+}
+
+void displayLimitSwitchStatus() {
+  if (!oledFound)
+    return;
+
+  // This is called from updateDisplay, so we just add to existing display
+  display.print(F("L: "));
+  display.print(steeringController.getLeftLimitState() ? "HIT" : "OK ");
+  display.print(F(" R: "));
+  display.println(steeringController.getRightLimitState() ? "HIT" : "OK ");
+}
+
+void displayConnectivityStatus() {
+  if (!oledFound)
+    return;
+
+  // This is called from updateDisplay
+  unsigned long timeSince = millis() - lastCmdVelTime;
+
+  if (cmdVelReceived && timeSince < 2000) {
+    display.println(F("ROS2: CONNECTED"));
+  } else if (cmdVelReceived) {
+    display.print(F("ROS2: IDLE ("));
+    display.print(timeSince / 1000);
+    display.println(F("s)"));
+  } else {
+    display.println(F("ROS2: WAITING..."));
+  }
+}
+
 void updateDisplay() {
   if (!oledFound)
     return;
@@ -281,23 +671,31 @@ void updateDisplay() {
     return;
   }
 
-  display.println(F("UGV STATUS: READY"));
+  // Header
+  display.println(F("UGV STATUS"));
   display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
 
   display.setCursor(0, 15);
+
+  // Calibration state
+  display.print(F("Cal: "));
+  display.println(steeringController.getCalibrationStateString());
+
+  // Steering info
   display.print(F("Ang: "));
   display.print(steeringController.getCurrentAngle(), 1);
   display.print(F(" / "));
   display.println(steeringController.getTargetAngle(), 1);
 
+  // Velocity
   display.print(F("Vel: "));
   display.println(drivingController.getCurrentVelocity(), 2);
 
-  display.print(F("Enc: "));
-  display.println(steeringController.getEncoderCount());
+  // Limit switches
+  displayLimitSwitchStatus();
 
-  display.print(F("GY87: "));
-  display.println(gy87Found ? "OK" : "NC");
+  // Connectivity
+  displayConnectivityStatus();
 
   display.display();
 }
@@ -327,21 +725,51 @@ void setup() {
     display.display();
   }
 
-  // Check for GY87 (MPU6050 at 0x68)
-  Wire.beginTransmission(0x68);
-  if (Wire.endTransmission() == 0) {
-    Serial.println(F("GY87 (MPU6050) Found"));
-    gy87Found = true;
-  } else {
-    Serial.println(F("GY87 Not Found"));
-    gy87Found = false;
-  }
-
   delay(1000);
 
   Serial.println("UGV ESP32 Controller Starting...");
+  Serial.println("\n========================================");
+  Serial.println("STARTUP LIMIT SWITCH CHECK");
+  Serial.println("========================================");
 
-  // Initialize controllers
+  // Check limit switch states at startup
+  // Note: Switches are connected to GND, so HIGH = not pressed, LOW = pressed
+  bool leftState = digitalRead(LIMIT_SWITCH_LEFT);
+  bool rightState = digitalRead(LIMIT_SWITCH_RIGHT);
+
+  Serial.print("Left Limit Switch (Pin 32, GND-connected): ");
+  Serial.println(leftState ? "HIGH (Not Pressed)" : "LOW (PRESSED!)");
+  Serial.print("Right Limit Switch (Pin 33, GND-connected): ");
+  Serial.println(rightState ? "HIGH (Not Pressed)" : "LOW (PRESSED!)");
+
+  if (!leftState || !rightState) {
+    Serial.println("\n⚠ WARNING: Limit switch(es) pressed at startup!");
+    Serial.println("Please check physical alignment.\n");
+  } else {
+    Serial.println("✓ Limit switches OK (GND-connected)\n");
+  }
+  Serial.println("========================================\n");
+
+  // Option to enter test mode
+  Serial.println(
+      "Send 't' within 3 seconds to enter limit switch test mode...");
+  unsigned long startWait = millis();
+  while (millis() - startWait < 3000) {
+    if (Serial.available() > 0) {
+      char c = Serial.read();
+      if (c == 't' || c == 'T') {
+        testLimitSwitches();
+        break;
+      }
+    }
+    delay(10);
+  }
+
+  // Auto-test limit switches at startup
+  Serial.println("Performing automatic limit switch test...");
+  autoTestLimitSwitches();
+
+  // Initialize controllers (after limit switch test)
   steeringController.begin();
   drivingController.begin();
 
@@ -354,6 +782,21 @@ void setup() {
     Serial.println("Calibration loaded from memory.");
     SteeringController::instance_ = &steeringController;
     systemInitialized = true;
+  }
+
+  // Clear OLED boot message and display ready state
+  if (oledFound) {
+    display.clearDisplay();
+    display.setTextSize(2);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0, 0);
+    display.println(F("System Ready!"));
+    display.setTextSize(1);
+    display.setCursor(0, 25);
+    display.println(F("Waiting for"));
+    display.println(F("ROS2 commands..."));
+    display.display();
+    delay(2000);
   }
 
   // Setup micro-ROS
@@ -387,8 +830,19 @@ void loop() {
   // Status publishing
   if (currentTime - lastStatusPublish >= STATUS_PERIOD_MS) {
     lastStatusPublish = currentTime;
-
     publishStatus();
-    updateDisplay();
+  }
+
+  // Display update (separate from status publishing for better control)
+  if (currentTime - lastDisplayUpdate >= DISPLAY_PERIOD_MS) {
+    lastDisplayUpdate = currentTime;
+
+    // Show command received popup for 1 second after receiving a command
+    // Only after system is fully initialized and calibrated
+    if (systemInitialized && cmdVelReceived && (currentTime - lastCmdVelTime) < 1000) {
+      displayCommandReceived();
+    } else {
+      updateDisplay();
+    }
   }
 }

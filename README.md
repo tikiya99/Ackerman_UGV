@@ -71,15 +71,41 @@ pio run --target upload
 pio device monitor
 ```
 
-### 2. ROS2 Workspace
+### 2. ROS2 Workspace & micro-ROS Agent
+
+#### Option A: Build micro-ROS Agent from Source (Recommended)
 
 ```bash
-# Install micro-ROS agent
+# Create micro-ROS workspace
+mkdir -p ~/micro_ros_ws/src
+cd ~/micro_ros_ws
+
+# Clone dependencies and agent
+git clone https://github.com/micro-ROS/micro_ros_msgs.git src/micro_ros_msgs
+git clone -b humble https://github.com/micro-ROS/micro-ROS-Agent.git src/micro-ros-agent
+
+# Build
+source /opt/ros/humble/setup.bash
+colcon build
+
+# Add to bashrc for automatic loading (optional but recommended)
+echo 'source ~/micro_ros_ws/install/setup.bash' >> ~/.bashrc
+source ~/.bashrc
+```
+
+#### Option B: Install from Package (if available)
+
+```bash
+# This may not work depending on your system, but worth trying
 sudo apt update
 sudo apt install ros-humble-micro-ros-agent
+```
 
+#### Build ROS2 Teleop Workspace
+
+```bash
 # Build ROS2 workspace
-cd ros2_ws
+cd /path/to/Ackerman_UGV/ros2_ws
 colcon build
 source install/setup.bash
 ```
@@ -119,11 +145,19 @@ source install/setup.bash
 
 **Terminal 1** - micro-ROS Agent:
 ```bash
+# Make sure micro-ROS workspace is sourced (or add to ~/.bashrc)
+source ~/micro_ros_ws/install/setup.bash
+
+# Start the agent
 ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200
 ```
 
 **Terminal 2** - Teleop Keyboard:
 ```bash
+# Source the UGV ROS2 workspace
+source /path/to/Ackerman_UGV/ros2_ws/install/setup.bash
+
+# Run teleop
 ros2 run ugv_teleop teleop_keyboard
 ```
 
@@ -159,6 +193,300 @@ ros2 run ugv_teleop teleop_keyboard
    - Moves to center and resets encoder to 0
    - Saves calibration to memory
 4. Future boots load calibration from memory (no movement)
+
+## Testing Process
+
+### Phase 1: Hardware Verification
+
+**1.1 Limit Switch Testing** (Before first calibration)
+
+```bash
+# Upload firmware and open serial monitor
+pio device monitor
+
+# At startup, you'll see:
+# - "STARTUP LIMIT SWITCH CHECK"
+# - Left Limit Switch (Pin 32): HIGH (Not Pressed)
+# - Right Limit Switch (Pin 33): HIGH (Not Pressed)
+# - "Send 't' within 3 seconds to enter limit switch test mode..."
+
+# Send 't' to enter test mode:
+# - Physically move steering rack LEFT until first limit switch triggers
+# - Watch OLED display: "L: PRESS" should appear
+# - Physically move steering rack RIGHT until second limit switch triggers
+# - Watch OLED display: "R: PRESS" should appear
+# - Send 'q' to exit test mode
+```
+
+**Expected Output**:
+```
+✓ Both switches working correctly!
+```
+
+⚠️ **Limit Switch Connection Reminder**:
+- Switches must be connected to **GND**, not 5V
+- When pressed: Pin reads **LOW** (connected to GND)
+- When not pressed: Pin reads **HIGH** (floating/pullup from encoder power)
+
+**1.2 Encoder Verification** (During calibration)
+
+```bash
+# Encoder is tested automatically during calibration
+# Watch serial output:
+# - "Starting steering calibration..."
+# - OLED shows: "CALIBRATION / Starting..."
+# - Motor moves LEFT until limit switch triggers
+# - OLED shows: "CALIBRATION / Encoder: [count]"
+# - Motor moves RIGHT to opposite limit
+# - Calculates center position
+# - Motor centers and locks calibration
+```
+
+**Expected Output**:
+```
+Calibration successful!
+```
+
+### Phase 2: Initialization & OLED Display
+
+**2.1 Boot Sequence** (Watch OLED and Serial)
+
+```bash
+# Power on ESP32
+# Serial output should show:
+# ========================================
+# UGV ESP32 Controller Starting...
+# STARTUP LIMIT SWITCH CHECK
+# ========================================
+# Left Limit Switch (Pin 32, GND-connected): HIGH (Not Pressed)
+# Right Limit Switch (Pin 33, GND-connected): HIGH (Not Pressed)
+# ✓ Limit switches OK (GND-connected)
+```
+
+**OLED Display Sequence**:
+1. **Boot Phase**: Shows "Booting UGV..." (briefly)
+2. **Calibration Phase** (if needed):
+   - Shows "CALIBRATION / Starting..."
+   - Then "CALIBRATION / SUCCESS!" (after 1-2 seconds)
+   - Displays limit switch states and encoder count
+3. **Ready Phase**: Shows "System Ready!" for 2 seconds
+   - Followed by "Waiting for ROS2 commands..."
+4. **Idle State**: Normal status display
+   - Current steering angle / target angle
+   - Current velocity
+   - Limit switch status (L: OK or L: HIT)
+   - ROS2 connectivity status
+
+### Phase 3: ROS2 Connection Testing
+
+**3.1 Start micro-ROS Agent** (Terminal 1)
+
+```bash
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200
+```
+
+**Expected Output**:
+```
+[INFO] [1734773400.123456] [rclc]: Initializing RCL
+[INFO] [1734773400.234567] [rclc]: Initialized from ROS2
+[INFO] [1734773400.345678] [rclc]: Creating executor
+```
+
+**Serial Monitor Shows**:
+```
+micro-ROS initialized successfully!
+System ready!
+```
+
+**3.2 Check ROS2 Topics** (Terminal 2)
+
+```bash
+# List all topics
+ros2 topic list
+
+# Expected output:
+/cmd_vel
+/parameter_events
+/rosout
+/ugv/status
+```
+
+**3.3 Monitor Status Topic**
+
+```bash
+ros2 topic echo /ugv/status
+
+# Expected output (repeats every 100ms):
+data: "Angle:0.00 Target:0.00 Vel:0.00 Enc:0 E-Stop:0"
+```
+
+### Phase 4: Teleop Command Reception
+
+**4.1 Launch Full Teleop System** (Terminal 3)
+
+```bash
+cd ros2_ws
+source install/setup.bash
+ros2 launch ugv_teleop ugv_teleop.launch.py
+```
+
+**Expected Output**:
+```
+[INFO] [teleop_keyboard-N]: Teleop Keyboard Node started
+[INFO] [teleop_keyboard-N]: Use WASD for movement, SPACE for stop
+```
+
+**4.2 Test Command Reception with Keyboard**
+
+Send commands using the teleop keyboard:
+
+```
+Available Controls:
+i = Forward          j = Turn Left      u = Forward-Left
+k = Stop             l = Turn Right     o = Forward-Right
+, = Backward         . = Backward-Right m = Backward-Left
+space = Emergency Stop
+q/z = Increase/Decrease Max Speed
+```
+
+**What to Watch On OLED**:
+1. **Normal State** (before command):
+   - Shows "UGV STATUS"
+   - Angle values should be stable
+   - Vel: 0.00 (no movement)
+   - L: OK and R: OK (limit switches not triggered)
+   - ROS2: WAITING... (no commands yet)
+
+2. **After Sending Forward Command** (i key):
+   - OLED immediately displays: "CMD RECEIVED!"
+   - Shows:
+     - Linear: 0.50 m/s (or configured speed)
+     - Angular: 0.00 rad/s
+     - Age: 0-100ms (time since command received)
+     - Target Angle: 0.0 deg (since going straight)
+   - Display for 1 second, then back to status
+
+3. **After Sending Turn Left Command** (j key):
+   - OLED shows: "CMD RECEIVED!"
+   - Shows:
+     - Linear: 0.00 m/s (turning in place)
+     - Angular: 1.00 rad/s (left turn)
+     - Target Angle: ~5.0 deg (steering left)
+   - Steering motor moves left
+   - Angle value changes in status display
+
+4. **After Sending Diagonal Command** (u key):
+   - OLED shows: "CMD RECEIVED!"
+   - Shows:
+     - Linear: 0.50 m/s
+     - Angular: 1.00 rad/s
+     - Target Angle: ~5.0 deg
+   - Both motors engage (steering + driving)
+
+**4.3 Manual Command Publishing** (For detailed testing)
+
+```bash
+# Test forward motion
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}}" --once
+
+# Test left turn
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{angular: {z: 1.0}}" --once
+
+# Test forward + left
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.5}, angular: {z: 1.0}}" --once
+
+# Test backward + right
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: -0.3}, angular: {z: -0.5}}" --once
+```
+
+**Expected Behavior**:
+- ESP32 receives each command
+- Motors respond appropriately
+- OLED displays command details for 1 second
+- Status topic shows updated angle/velocity values
+
+### Phase 5: Full Integration Test
+
+**5.1 Complete System Operation**
+
+```bash
+# Terminal 1: micro-ROS Agent
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200
+
+# Terminal 2: Teleop Keyboard
+ros2 run ugv_teleop teleop_keyboard
+
+# Terminal 3: Monitor status
+ros2 topic echo /ugv/status
+
+# Terminal 4: Monitor received commands
+ros2 topic echo /cmd_vel
+
+# Terminal 5: Serial monitor
+pio device monitor
+```
+
+**Test Sequence**:
+
+1. **Forward Motion**
+   - Press 'i' on keyboard
+   - Watch all outputs:
+     - OLED: Shows "CMD RECEIVED!" with values
+     - Serial: Shows motor speed changes
+     - Status topic: Vel increases, Angle stays 0
+   - Press 'k' to stop
+   - All values return to zero
+
+2. **Steering Left**
+   - Press 'j' on keyboard
+   - Watch:
+     - OLED: Shows "CMD RECEIVED!" with left turn values
+     - Serial: Steering motor moves left
+     - Status topic: Angle goes negative (left)
+   - Press 'k' to stop
+   - Steering centers
+
+3. **Complex Motion**
+   - Press 'u' (forward + left)
+   - Watch both motors:
+     - Driving motor accelerates forward
+     - Steering motor moves left
+     - OLED shows both commands
+   - Press 'k' to stop
+
+4. **Limit Switch Safety**
+   - Continue turning left with multiple 'j' presses
+   - At ±10°, steering should stop responding
+   - If limit switch triggered: OLED shows "EMERGENCY STOP"
+   - All motion halts
+
+### Phase 6: Performance Metrics
+
+**6.1 Check These Values from Status Topic**
+
+```bash
+ros2 topic echo /ugv/status --once
+# data: "Angle:0.00 Target:5.00 Vel:0.50 Enc:250 E-Stop:0"
+```
+
+- **Angle**: Current steering angle (should track Target)
+- **Target**: Commanded angle (0 = straight, ±10 = max)
+- **Vel**: Current driving velocity (0.0 to 1.0 m/s)
+- **Enc**: Encoder count (±500 = ±10°)
+- **E-Stop**: 0 = normal, 1 = emergency stop active
+
+**6.2 Check OLED Update Rate**
+
+- Status display should update every 200ms (5Hz)
+- Command display should appear within 100ms of command
+- No visual flicker or lag
+
+**6.3 Check Connectivity**
+
+From Status Display on OLED, ROS2 line shows:
+- `ROS2: CONNECTED` - Command received within last 2 seconds
+- `ROS2: IDLE (5s)` - No command for 5 seconds
+- `ROS2: WAITING...` - No command ever received
 
 ## Monitoring & Debugging
 
