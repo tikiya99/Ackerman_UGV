@@ -1,0 +1,37 @@
+running egg_info
+creating ../../build/ugv_teleop/ugv_teleop.egg-info
+writing ../../build/ugv_teleop/ugv_teleop.egg-info/PKG-INFO
+writing dependency_links to ../../build/ugv_teleop/ugv_teleop.egg-info/dependency_links.txt
+writing entry points to ../../build/ugv_teleop/ugv_teleop.egg-info/entry_points.txt
+writing requirements to ../../build/ugv_teleop/ugv_teleop.egg-info/requires.txt
+writing top-level names to ../../build/ugv_teleop/ugv_teleop.egg-info/top_level.txt
+writing manifest file '../../build/ugv_teleop/ugv_teleop.egg-info/SOURCES.txt'
+reading manifest file '../../build/ugv_teleop/ugv_teleop.egg-info/SOURCES.txt'
+writing manifest file '../../build/ugv_teleop/ugv_teleop.egg-info/SOURCES.txt'
+running build
+running build_py
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop
+copying ugv_teleop/teleop_keyboard.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop
+copying ugv_teleop/__init__.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop
+running install
+running install_lib
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop
+copying /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop/teleop_keyboard.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop
+copying /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop/__init__.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop
+byte-compiling /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop/teleop_keyboard.py to teleop_keyboard.cpython-310.pyc
+byte-compiling /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop/__init__.py to __init__.cpython-310.pyc
+running install_data
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index/resource_index
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index/resource_index/packages
+copying resource/ugv_teleop -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index/resource_index/packages
+copying package.xml -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ugv_teleop
+creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ugv_teleop/launch
+copying launch/ugv_teleop.launch.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ugv_teleop/launch
+running install_egg_info
+Copying ../../build/ugv_teleop/ugv_teleop.egg-info to /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop-0.0.0-py3.10.egg-info
+running install_scripts
+Installing teleop_keyboard script to /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/ugv_teleop
+writing list of installed files to '/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/install.log'

@@ -1,0 +1,39 @@
+[1.293s] Invoking command in '/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/src/ugv_teleop': PYTHONPATH=/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/ugv_teleop build --build-base /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build install --record /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/install.log --single-version-externally-managed install_data
+[1.677s] running egg_info
+[1.677s] creating ../../build/ugv_teleop/ugv_teleop.egg-info
+[1.678s] writing ../../build/ugv_teleop/ugv_teleop.egg-info/PKG-INFO
+[1.678s] writing dependency_links to ../../build/ugv_teleop/ugv_teleop.egg-info/dependency_links.txt
+[1.678s] writing entry points to ../../build/ugv_teleop/ugv_teleop.egg-info/entry_points.txt
+[1.678s] writing requirements to ../../build/ugv_teleop/ugv_teleop.egg-info/requires.txt
+[1.679s] writing top-level names to ../../build/ugv_teleop/ugv_teleop.egg-info/top_level.txt
+[1.679s] writing manifest file '../../build/ugv_teleop/ugv_teleop.egg-info/SOURCES.txt'
+[1.681s] reading manifest file '../../build/ugv_teleop/ugv_teleop.egg-info/SOURCES.txt'
+[1.683s] writing manifest file '../../build/ugv_teleop/ugv_teleop.egg-info/SOURCES.txt'
+[1.683s] running build
+[1.683s] running build_py
+[1.683s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build
+[1.683s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib
+[1.683s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop
+[1.684s] copying ugv_teleop/teleop_keyboard.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop
+[1.684s] copying ugv_teleop/__init__.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop
+[1.684s] running install
+[1.684s] running install_lib
+[1.685s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop
+[1.685s] copying /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop/teleop_keyboard.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop
+[1.685s] copying /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build/lib/ugv_teleop/__init__.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop
+[1.686s] byte-compiling /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop/teleop_keyboard.py to teleop_keyboard.cpython-310.pyc
+[1.687s] byte-compiling /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop/__init__.py to __init__.cpython-310.pyc
+[1.687s] running install_data
+[1.687s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index
+[1.687s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index/resource_index
+[1.688s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index/resource_index/packages
+[1.688s] copying resource/ugv_teleop -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ament_index/resource_index/packages
+[1.688s] copying package.xml -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ugv_teleop
+[1.688s] creating /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ugv_teleop/launch
+[1.688s] copying launch/ugv_teleop.launch.py -> /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/share/ugv_teleop/launch
+[1.688s] running install_egg_info
+[1.690s] Copying ../../build/ugv_teleop/ugv_teleop.egg-info to /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages/ugv_teleop-0.0.0-py3.10.egg-info
+[1.691s] running install_scripts
+[1.714s] Installing teleop_keyboard script to /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/ugv_teleop
+[1.714s] writing list of installed files to '/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/install.log'
+[1.764s] Invoked command in '/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/src/ugv_teleop' returned '0': PYTHONPATH=/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/prefix_override:/usr/lib/python3/dist-packages/colcon_core/task/python/colcon_distutils_commands:/home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/install/ugv_teleop/lib/python3.10/site-packages:${PYTHONPATH} /usr/bin/python3 -W ignore:setup.py install is deprecated -W ignore:easy_install command is deprecated setup.py egg_info --egg-base ../../build/ugv_teleop build --build-base /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/build install --record /home/thasinduwickrama/Documents/PlatformIO/Projects/Ackerman_UGV/ros2_ws/build/ugv_teleop/install.log --single-version-externally-managed install_data
